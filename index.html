@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Herald Kanban</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚚</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:dark;--bg:#0c1214;--panel:#131b1e;--card:#1a2427;--ink:#e8e2d0;--mute:#869088;--line:#263236;--accent:#e0b04a;--shadow:none}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font:500 15px/1.4 Nunito,system-ui,sans-serif;display:flex;flex-direction:column}
+button,input,select{font:inherit;color:inherit}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:16px 22px 8px}
+h1{margin:0;font-size:22px;font-weight:800;letter-spacing:-.3px}
+h1 span{color:var(--accent)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;flex:1}
+.chip{border:0;border-radius:6px;padding:5px 13px;background:var(--panel);cursor:pointer;font-weight:700;font-size:13px;display:inline-flex;gap:6px;align-items:center}
+.chip.on{background:var(--accent);color:#0c1214}
+.chip[data-h]{background:hsl(var(--h) 30% 20%);color:hsl(var(--h) 60% 78%)}
+.chip[data-h].on{background:hsl(var(--h) 55% 58%);color:#0c1214}
+.chip i{font-style:normal;opacity:.6;font-size:15px;line-height:1}
+.chip i:hover{opacity:1}
+.mini{border:1.5px dashed var(--line);background:transparent;border-radius:6px;padding:4px 12px;width:120px;font-size:13px;outline:none}
+.mini:focus{border-color:var(--accent)}
+main{flex:1;display:flex;gap:16px;padding:10px 22px 16px;min-height:0}
+.shelf{width:270px;flex:none;background:var(--panel);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:10px;outline:2px dashed transparent}
+.col{width:280px;flex:none;background:var(--panel);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:10px;max-height:100%}
+.shelf.over,.col.over{outline-color:var(--accent)}
+.board{display:flex;gap:16px;overflow-x:auto;flex:1;align-items:flex-start;padding-bottom:6px}
+.head{display:flex;align-items:center;gap:8px}
+.head b{font-weight:800;flex:1;cursor:text}
+.head small{color:var(--mute);font-weight:700}
+.x{background:none;border:0;color:var(--mute);cursor:pointer;font-size:17px;line-height:1;padding:2px 4px;border-radius:6px}
+.x:hover{color:var(--ink);background:var(--line)}
+.list{display:flex;flex-direction:column;gap:8px;overflow-y:auto;min-height:24px}
+.card{background:var(--card);border-radius:6px;padding:10px 12px;box-shadow:var(--shadow);cursor:grab}
+.card.drag{opacity:.4}
+.card p{margin:0 0 8px;word-break:break-word;cursor:text}
+.foot{display:flex;gap:6px;align-items:center}
+.foot select{border:0;border-radius:6px;padding:3px 6px;font-size:12px;font-weight:700;background:var(--panel);max-width:50%;cursor:pointer}
+.foot select[data-h]{background:hsl(var(--h) 30% 20%);color:hsl(var(--h) 60% 78%)}
+.foot .x{margin-left:auto}
+.add{border:0;background:var(--card);border-radius:6px;padding:9px 12px;width:100%;outline:2px solid transparent}
+.add:focus{outline-color:var(--accent)}
+.empty{color:var(--mute);font-size:13px;padding:2px 2px 6px}
+.newcol{width:220px;flex:none}
+.f{display:flex;gap:6px;align-items:center}.f input{flex:1;min-width:0}
+.mini{width:130px}
+.go{border:0;background:var(--line);border-radius:6px;padding:7px 11px;cursor:pointer;font-weight:800;line-height:1}
+.go:hover{background:var(--accent);color:#0c1214}
+.mv{font-weight:800}
+#st{color:var(--mute);font-size:13px;align-self:center;margin-right:auto}
+footer{display:flex;gap:8px;justify-content:flex-end;padding:0 22px 14px}
+footer button{border:0;background:var(--panel);border-radius:6px;padding:6px 14px;cursor:pointer;font-weight:700;font-size:13px}
+footer button:hover{background:var(--line)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media(max-width:760px){input{font-size:16px}.mv{transform:rotate(90deg)}main{flex-direction:column;overflow-y:auto}.shelf{width:100%}.board{overflow:visible;flex-direction:column;align-items:stretch}.col,.newcol{width:100%}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Herald <span>Kanban</span></h1>
+  <div class="chips" id="chips"></div>
+</header>
+<main>
+  <aside class="shelf" id="shelf"></aside>
+  <div class="board" id="board"></div>
+</main>
+<footer>
+  <span id="st"></span><button id="sync">Sync</button><button id="exp">Export backup</button>
+  <button id="imp">Import backup</button>
+  <input type="file" id="file" accept=".json" hidden>
+</footer>
+
+<script>
+const KEY='herald-kanban-v1';
+const uid=()=>Math.random().toString(36).slice(2,9);
+let S=load();
+function load(){
+  try{const d=JSON.parse(localStorage.getItem(KEY));if(d&&d.cols)return d}catch(e){}
+  return{channels:[],cols:[{id:'c1',name:'Pending'},{id:'c2',name:'Ongoing'},{id:'c3',name:'Done'}],cards:[],filter:'all'};
+}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+function h(tag,p={},...kids){
+  const e=document.createElement(tag);
+  for(const k in p){
+    if(k==='text')e.textContent=p[k];
+    else if(k.startsWith('on'))e.addEventListener(k.slice(2),p[k]);
+    else if(k==='h'){e.dataset.h=p[k];e.style.setProperty('--h',p[k])}
+    else e.setAttribute(k,p[k]);
+  }
+  kids.flat().forEach(c=>c&&e.append(c));
+  return e;
+}
+const chHue=id=>{const c=S.channels.find(c=>c.id===id);return c?c.hue:null};
+const visible=c=>S.filter==='all'||c.ch===S.filter;
+const upd=()=>{S.updated=Date.now();save();render();push()};
+
+function addCard(text,col){
+  text=text.trim();if(!text)return;
+  S.cards.push({id:uid(),text,col,ch:S.filter==='all'?null:S.filter});upd();
+}
+function inputBox(ph,fn,cls='add'){
+  const i=h('input',{class:cls,placeholder:ph,maxlength:200,enterkeyhint:'done',autocomplete:'off'});
+  return h('form',{class:'f',onsubmit:e=>{e.preventDefault();if(i.value.trim()){fn(i.value);i.value=''}}},i,h('button',{class:'go',type:'submit',title:'Add',text:'+'}));
+}
+
+function cardEl(c){
+  const hue=chHue(c.ch);
+  const chSel=h('select',{title:'Channel',onchange:e=>{c.ch=e.target.value||null;upd()}},
+    h('option',{value:'',text:'No channel'}),
+    S.channels.map(x=>{const o=h('option',{value:x.id,text:x.name});if(x.id===c.ch)o.selected=true;return o}));
+  if(hue!=null){chSel.dataset.h=hue;chSel.style.setProperty('--h',hue)}
+  const mv=h('select',{title:'Move to',onchange:e=>{if(e.target.value){c.col=e.target.value;upd()}}},
+    h('option',{value:'',text:'Move to…'}),
+    c.col!=='shelf'&&h('option',{value:'shelf',text:'Ideas shelf'}),
+    S.cols.filter(x=>x.id!==c.col).map(x=>h('option',{value:x.id,text:x.name})));
+  const el=h('div',{class:'card',draggable:'true',id:'k'+c.id,
+    ondragstart:e=>{e.dataTransfer.setData('text/plain',c.id);e.dataTransfer.effectAllowed='move';setTimeout(()=>el.classList.add('drag'))},
+    ondragend:()=>el.classList.remove('drag')},
+    h('p',{text:c.text,title:'Click to edit',onclick:()=>{const t=prompt('Edit',c.text);if(t&&t.trim()){c.text=t.trim();upd()}}}),
+    h('div',{class:'foot'},chSel,mv,h('button',{class:'x',title:'Delete',text:'×',onclick:()=>{S.cards=S.cards.filter(x=>x!==c);upd()}})));
+  return el;
+}
+
+function dropZone(el,colId){
+  el.addEventListener('dragover',e=>{e.preventDefault();el.classList.add('over')});
+  el.addEventListener('dragleave',e=>{if(!el.contains(e.relatedTarget))el.classList.remove('over')});
+  el.addEventListener('drop',e=>{
+    e.preventDefault();el.classList.remove('over');
+    const id=e.dataTransfer.getData('text/plain');
+    const c=S.cards.find(x=>x.id===id);if(!c)return;
+    const t=e.target.closest('.card');
+    S.cards=S.cards.filter(x=>x!==c);c.col=colId;
+    const bi=t?S.cards.findIndex(x=>'k'+x.id===t.id):-1;
+    bi>=0?S.cards.splice(bi,0,c):S.cards.push(c);
+    upd();
+  });
+}
+
+function moveCol(col,d){
+  const i=S.cols.indexOf(col),j=i+d;
+  if(j<0||j>=S.cols.length)return;
+  S.cols.splice(i,1);S.cols.splice(j,0,col);upd();
+}
+
+function render(){
+  // channel chips
+  const chips=document.getElementById('chips');chips.replaceChildren(...[
+    h('button',{class:'chip'+(S.filter==='all'?' on':''),text:'All channels',onclick:()=>{S.filter='all';upd()}}),
+    S.channels.map(c=>h('button',{class:'chip'+(S.filter===c.id?' on':''),h:c.hue,onclick:()=>{S.filter=c.id;upd()}},
+      c.name,
+      S.filter===c.id&&h('i',{title:'Delete channel',text:'×',onclick:e=>{e.stopPropagation();
+        if(confirm('Delete channel “'+c.name+'”? Cards stay, just untagged.')){S.cards.forEach(k=>{if(k.ch===c.id)k.ch=null});S.channels=S.channels.filter(x=>x!==c);S.filter='all';upd()}}}))),
+    inputBox('+ channel',n=>{const id=uid();S.channels.push({id,name:n.trim(),hue:(S.channels.length*67+12)%360});S.filter=id;upd()},'mini')].flat());
+
+  // shelf
+  const shelf=document.getElementById('shelf');
+  const sc=S.cards.filter(c=>c.col==='shelf'&&visible(c));
+  const sl=h('div',{class:'list'},sc.map(cardEl),!sc.length&&h('div',{class:'empty',text:'Drop a thought here. Sort it later.'}));
+  shelf.replaceChildren(h('div',{class:'head'},h('b',{text:'Ideas shelf'}),h('small',{text:sc.length})),inputBox('Quick idea…',t=>addCard(t,'shelf')),sl);
+  if(!shelf._dz){dropZone(shelf,'shelf');shelf._dz=1}
+
+  // board
+  const board=document.getElementById('board');
+  board.replaceChildren(...S.cols.map(col=>{
+    const cs=S.cards.filter(c=>c.col===col.id&&visible(c));
+    const el=h('section',{class:'col'},
+      h('div',{class:'head'},
+        h('b',{text:col.name,title:'Click to rename',onclick:()=>{const n=prompt('Rename column',col.name);if(n&&n.trim()){col.name=n.trim();upd()}}}),
+        h('small',{text:cs.length}),
+        h('button',{class:'x mv',title:'Move column back',text:'‹',onclick:()=>moveCol(col,-1)}),
+        h('button',{class:'x mv',title:'Move column forward',text:'›',onclick:()=>moveCol(col,1)}),
+        h('button',{class:'x',title:'Delete column',text:'×',onclick:()=>{
+          if(confirm('Delete “'+col.name+'”? Its cards go back to the shelf.')){S.cards.forEach(c=>{if(c.col===col.id)c.col='shelf'});S.cols=S.cols.filter(x=>x!==col);upd()}}})),
+      h('div',{class:'list'},cs.map(cardEl)),
+      inputBox('+ Add card',t=>addCard(t,col.id)));
+    dropZone(el,col.id);return el;
+  }),h('div',{class:'newcol'},inputBox('+ New column',n=>{S.cols.push({id:uid(),name:n.trim()});upd()})));
+}
+
+// backup
+document.getElementById('exp').onclick=()=>{
+  const a=h('a',{href:URL.createObjectURL(new Blob([JSON.stringify(S,null,2)],{type:'application/json'})),download:'herald-kanban-'+new Date().toISOString().slice(0,10)+'.json'});
+  a.click();URL.revokeObjectURL(a.href);
+};
+const file=document.getElementById('file');
+document.getElementById('imp').onclick=()=>file.click();
+file.onchange=async()=>{
+  try{const d=JSON.parse(await file.files[0].text());
+    if(!d.cols||!d.cards||!d.channels)throw 0;
+    if(confirm('Replace current board with this backup?')){S=d;S.filter='all';upd()}
+  }catch(e){alert('That file isn’t a Herald Kanban backup.')}
+  file.value='';
+};
+
+// ---- sync across devices (private GitHub Gist) ----
+const SK='herald-sync',FN='herald-kanban.json';
+let cfg={};try{cfg=JSON.parse(localStorage.getItem(SK))||{}}catch(e){}
+const st=t=>{document.getElementById('st').textContent=t};
+const gh=(path,opt={})=>fetch('https://api.github.com'+path,{...opt,headers:{Authorization:'Bearer '+cfg.token,Accept:'application/vnd.github+json','Content-Type':'application/json'}})
+  .then(r=>{if(!r.ok)throw new Error(r.status);return r.json()});
+const payload=()=>JSON.stringify({...S,filter:'all'});
+async function findGist(){
+  if(cfg.gist)return;
+  const list=await gh('/gists?per_page=100');
+  const g=list.find(g=>g.files&&g.files[FN]);
+  if(g)cfg.gist=g.id;
+  else{
+    S.updated=S.updated||Date.now();save();
+    const n=await gh('/gists',{method:'POST',body:JSON.stringify({description:'Herald Kanban data',public:false,files:{[FN]:{content:payload()}}})});
+    cfg.gist=n.id;
+  }
+  localStorage.setItem(SK,JSON.stringify(cfg));
+}
+async function pull(){
+  if(!cfg.token)return;
+  try{
+    st('Syncing…');await findGist();
+    const g=await gh('/gists/'+cfg.gist),f=g.files[FN];
+    const r=JSON.parse(f.truncated?await (await fetch(f.raw_url)).text():f.content);
+    if(r.cols&&(r.updated||0)>(S.updated||0)){
+      const fl=S.filter;S=r;S.filter=S.channels.some(c=>c.id===fl)?fl:'all';save();render();st('Synced');
+    }else if((S.updated||0)>(r.updated||0))await doPush();
+    else st('Synced');
+  }catch(e){st('Sync failed')}
+}
+let pt;
+function push(){if(!cfg.token)return;clearTimeout(pt);st('Saving…');pt=setTimeout(doPush,800)}
+async function doPush(){
+  try{await findGist();await gh('/gists/'+cfg.gist,{method:'PATCH',body:JSON.stringify({files:{[FN]:{content:payload()}}})});st('Synced')}
+  catch(e){st('Sync failed')}
+}
+document.getElementById('sync').onclick=()=>{
+  const t=prompt('Paste GitHub token (classic, only “gist” permission).\nLeave empty to turn sync off.',cfg.token||'');
+  if(t===null)return;
+  localStorage.removeItem(SK);
+  if(!t.trim()){cfg={};st('Sync off');return}
+  cfg={token:t.trim()};localStorage.setItem(SK,JSON.stringify(cfg));pull();
+};
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)pull()});
+cfg.token?pull():st('Sync off');
+render();
+</script>
+</body>
+</html>
